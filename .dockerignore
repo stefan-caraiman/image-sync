@@ -1,0 +1,12 @@
+.dockerignore
+.env
+.git*
+.vs
+.vscode
+*.md
+docker-compose.yml
+docker-compose.*.yml
+*/bin
+*/obj
+_ReSharper.Caches/*
+.vscode

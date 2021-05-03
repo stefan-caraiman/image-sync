@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SYNC_WORKERS=${SYNC_WORKERS:-1}
+SYNC_WORKER_INDEX=${SYNC_WORKER_INDEX:-1}
+
+SYNC_BUNDLE_FILE=${SYNC_BUNDLE_FILE-"/config/bundle.yaml"}
+SYNC_LATEST_TAG=${SYNC_LATEST_TAG:-true}
+SYNC_SKOPEO_COPY_ARGS=${SYNC_SKOPEO_COPY_ARGS:-" --quiet"}
+
+SYNC_RETRY_INTERVAL=${SYNC_RETRY_INTERVAL:-60}
+SYNC_REGISTRY_SRC=${SYNC_REGISTRY_SRC:-}
+SYNC_REGISTRY_DST=${SYNC_REGISTRY_DST:-}
+
+SYNC_REGISTRY_SRC_USER=${SYNC_REGISTRY_SRC_USER:-}
+SYNC_REGISTRY_SRC_PASS=${SYNC_REGISTRY_SRC_PASS:-}
+
+SYNC_REGISTRY_DST_USER=${SYNC_REGISTRY_DST_USER:-}
+SYNC_REGISTRY_DST_PASS=${SYNC_REGISTRY_DST_PASS:-}
+
+echo "Logging into ${SYNC_REGISTRY_SRC}"
+echo -n "${SYNC_REGISTRY_SRC_PASS}" | skopeo login --username "${SYNC_REGISTRY_SRC_USER}" "${SYNC_REGISTRY_SRC}" --password-stdin
+echo "Logging into ${SYNC_REGISTRY_DST}"
+echo -n "${SYNC_REGISTRY_DST_PASS}" | skopeo login --username "${SYNC_REGISTRY_DST_USER}" "${SYNC_REGISTRY_DST}" --password-stdin
+
+while true; do
+
+APPS=( $(yq e '.' $SYNC_BUNDLE_FILE |  grep -v '^ .*' | sed 's/:.*$//') )
+APPS_LENGTH="${#APPS[@]}"
+let DIV_NR="($APPS_LENGTH+$SYNC_WORKERS-1)/$SYNC_WORKERS";
+APPS=( $(echo "${APPS[@]}" | xargs -n "$DIV_NR" | sed -n "${SYNC_WORKER_INDEX}p") )
+
+for app in "${APPS[@]}"; do
+    version=$(yq e '.'${app}'.version' $SYNC_BUNDLE_FILE)
+    project_path=$(yq e '.'${app}'.project_path' $SYNC_BUNDLE_FILE)
+    project_name=$(yq e '.'${app}'.project_name' $SYNC_BUNDLE_FILE)
+    registry_tags_dst=$(skopeo list-tags docker://$SYNC_REGISTRY_DST/$project_name)
+
+    if [[ "$registry_tags_dst" =~ ${version} ]]; then
+        echo "$SYNC_REGISTRY_DST/$project_name:$version exists, skipping";
+        continue
+    fi
+    (
+    registry_tags_src=$(skopeo list-tags docker://$SYNC_REGISTRY_SRC/$project_path)
+    if [[ "$registry_tags_src" =~ ${version} ]]; then
+        echo "Copying $project_path:$version"
+        skopeo copy docker://$SYNC_REGISTRY_SRC/$project_path:$version docker://$SYNC_REGISTRY_DST/$project_name:$version ${SYNC_SKOPEO_COPY_ARGS}
+    else
+        echo "$SYNC_REGISTRY_SRC/$project_path:$version does NOT exist!"
+    fi
+    ) &
+done
+
+wait
+echo "Sleeping for $SYNC_RETRY_INTERVAL"
+sleep "${SYNC_RETRY_INTERVAL}"
+
+done
