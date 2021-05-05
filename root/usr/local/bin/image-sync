@@ -6,8 +6,9 @@ SYNC_WORKERS=${SYNC_WORKERS:-1}
 SYNC_WORKER_INDEX=${SYNC_WORKER_INDEX:-1}
 
 SYNC_BUNDLE_FILE=${SYNC_BUNDLE_FILE-"/config/bundle.yaml"}
-SYNC_LATEST_TAG=${SYNC_LATEST_TAG:-true}
-SYNC_TAGS_MATCH=${SYNC_TAGS_MATCH:-}
+SYNC_SRC_TAGS_ALWAYS=${SYNC_SRC_TAGS_ALWAYS:-latest}
+SYNC_SRC_TAGS_MATCH=${SYNC_SRC_TAGS_MATCH:-latest}
+SYNC_SRC_TAGS_IGNORE=${SYNC_SRC_TAGS_IGNORE:-dummy}
 SYNC_SKOPEO_COPY_ARGS=${SYNC_SKOPEO_COPY_ARGS:-" --quiet"}
 
 SYNC_RETRY_INTERVAL=${SYNC_RETRY_INTERVAL:-30}
@@ -20,9 +21,9 @@ SYNC_REGISTRY_SRC_PASS=${SYNC_REGISTRY_SRC_PASS:-}
 SYNC_REGISTRY_DST_USER=${SYNC_REGISTRY_DST_USER:-}
 SYNC_REGISTRY_DST_PASS=${SYNC_REGISTRY_DST_PASS:-}
 
-echo "Logging into ${SYNC_REGISTRY_SRC}"
+echo "Login ${SYNC_REGISTRY_SRC}"
 echo -n "${SYNC_REGISTRY_SRC_PASS}" | skopeo login --username "${SYNC_REGISTRY_SRC_USER}" "${SYNC_REGISTRY_SRC}" --password-stdin
-echo "Logging into ${SYNC_REGISTRY_DST}"
+echo "Login ${SYNC_REGISTRY_DST}"
 echo -n "${SYNC_REGISTRY_DST_PASS}" | skopeo login --username "${SYNC_REGISTRY_DST_USER}" "${SYNC_REGISTRY_DST}" --password-stdin
 
 while true; do
@@ -33,28 +34,28 @@ let DIV_NR="($APPS_LENGTH+$SYNC_WORKERS-1)/$SYNC_WORKERS";
 APPS=( $(echo "${APPS[@]}" | xargs -n "$DIV_NR" | sed -n "${SYNC_WORKER_INDEX}p") )
 
 for app in "${APPS[@]}"; do
-    version=$(yq e '.'${app}'.version' $SYNC_BUNDLE_FILE)
-    project_path=$(yq e '.'${app}'.project_path' $SYNC_BUNDLE_FILE)
-    project_name=$(yq e '.'${app}'.project_name' $SYNC_BUNDLE_FILE)
-    registry_tags_dst=$(skopeo list-tags docker://$SYNC_REGISTRY_DST/$project_name)
-
-    if [[ "$registry_tags_dst" =~ ${version} ]]; then
-        echo "$SYNC_REGISTRY_DST/$project_name:$version exists, skipping";
-        continue
-    fi
     (
-    registry_tags_src=$(skopeo list-tags docker://$SYNC_REGISTRY_SRC/$project_path)
-    if [[ "$registry_tags_src" =~ ${version} ]]; then
-        echo "Copying $project_path:$version"
-        skopeo copy docker://$SYNC_REGISTRY_SRC/$project_path:$version docker://$SYNC_REGISTRY_DST/$project_name:$version ${SYNC_SKOPEO_COPY_ARGS}
-    else
-        echo "$SYNC_REGISTRY_SRC/$project_path:$version does NOT exist!"
-    fi
-    ) &
+    version=$(yq e '.'${app}'.version' $SYNC_BUNDLE_FILE)
+    src_path=$(yq e '.'${app}'.project_path' $SYNC_BUNDLE_FILE)
+    dst_path=$(yq e '.'${app}'.project_name' $SYNC_BUNDLE_FILE)
+
+    registry_tags_src=$(skopeo list-tags docker://$SYNC_REGISTRY_SRC/$src_path | jq -r '.Tags[]')
+    registry_tags_dst=$(skopeo list-tags docker://$SYNC_REGISTRY_DST/$dst_path | jq -r '.Tags[]')
+
+    for image_ref in $(echo "$registry_tags_src" | grep -Ei "$version|$SYNC_SRC_TAGS_MATCH" | grep -Evi "$SYNC_SRC_TAGS_IGNORE" ); do
+        if [[ "$image_ref" != "$SYNC_SRC_TAGS_ALWAYS" ]] && [[ "$registry_tags_dst" =~ ${image_ref} ]]; then
+            echo "$SYNC_REGISTRY_DST/$dst_path:$image_ref exists, skipping"
+            continue
+        fi
+        echo "Copying $SYNC_REGISTRY_SRC/$src_path:$image_ref"
+        skopeo copy "docker://$SYNC_REGISTRY_SRC/$src_path:$image_ref" "docker://$SYNC_REGISTRY_DST/$dst_path:$image_ref" ${SYNC_SKOPEO_COPY_ARGS}
+    done
+
+    )&
 done
 
 wait
-echo "Sleeping for $SYNC_RETRY_INTERVAL"
+echo "Sleep for $SYNC_RETRY_INTERVAL"
 sleep "${SYNC_RETRY_INTERVAL}"
 
 done
