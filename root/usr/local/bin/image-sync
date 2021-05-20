@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
-
 SYNC_WORKERS=${SYNC_WORKERS:-1}
 SYNC_WORKER_INDEX=${SYNC_WORKER_INDEX:-1}
 
