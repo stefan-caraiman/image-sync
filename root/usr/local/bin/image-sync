@@ -9,7 +9,7 @@ SYNC_SRC_TAGS_MATCH=${SYNC_SRC_TAGS_MATCH:-master}
 SYNC_SRC_TAGS_IGNORE=${SYNC_SRC_TAGS_IGNORE:-latest}
 SYNC_SKOPEO_COPY_ARGS=${SYNC_SKOPEO_COPY_ARGS:-" --quiet"}
 
-SYNC_RETRY_INTERVAL=${SYNC_RETRY_INTERVAL:-90}
+SYNC_RETRY_INTERVAL=${SYNC_RETRY_INTERVAL:-15}
 SYNC_REGISTRY_SRC=${SYNC_REGISTRY_SRC:-}
 SYNC_REGISTRY_DST=${SYNC_REGISTRY_DST:-}
 
@@ -32,7 +32,7 @@ let DIV_NR="($APPS_LENGTH+$SYNC_WORKERS-1)/$SYNC_WORKERS";
 APPS=( $(echo "${APPS[@]}" | xargs -n "$DIV_NR" | sed -n "${SYNC_WORKER_INDEX}p") )
 
 for app in "${APPS[@]}"; do
-    (
+
     version=$(yq e '.'${app}'.version' $SYNC_BUNDLE_FILE)
     src_path=$(yq e '.'${app}'.project_path' $SYNC_BUNDLE_FILE)
     dst_path=$(yq e '.'${app}'.project_name' $SYNC_BUNDLE_FILE)
@@ -49,7 +49,6 @@ for app in "${APPS[@]}"; do
         skopeo copy "docker://$SYNC_REGISTRY_SRC/$src_path:$image_ref" "docker://$SYNC_REGISTRY_DST/$dst_path:$image_ref" ${SYNC_SKOPEO_COPY_ARGS}
     done
 
-    )&
 done
 
 wait
