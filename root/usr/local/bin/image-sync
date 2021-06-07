@@ -9,7 +9,7 @@ SYNC_SRC_TAGS_MATCH=${SYNC_SRC_TAGS_MATCH:-master}
 SYNC_SRC_TAGS_IGNORE=${SYNC_SRC_TAGS_IGNORE:-latest}
 SYNC_SKOPEO_COPY_ARGS=${SYNC_SKOPEO_COPY_ARGS:-" --quiet"}
 
-SYNC_RETRY_INTERVAL=${SYNC_RETRY_INTERVAL:-15}
+SYNC_RETRY_INTERVAL=${SYNC_RETRY_INTERVAL:-20}
 SYNC_REGISTRY_SRC=${SYNC_REGISTRY_SRC:-}
 SYNC_REGISTRY_DST=${SYNC_REGISTRY_DST:-}
 
@@ -42,7 +42,7 @@ for app in "${APPS[@]}"; do
 
     for image_ref in $(echo "$registry_tags_src" | grep -Ei "$version|$SYNC_SRC_TAGS_MATCH" | grep -Evi "$SYNC_SRC_TAGS_IGNORE" ); do
         if [[ "$image_ref" != "$SYNC_SRC_TAGS_ALWAYS" ]] && [[ "$registry_tags_dst" =~ ${image_ref} ]]; then
-            echo "$SYNC_REGISTRY_DST/$dst_path:$image_ref exists, skipping"
+            #echo "$SYNC_REGISTRY_DST/$dst_path:$image_ref exists, skipping"
             continue
         fi
         echo "Copying $SYNC_REGISTRY_SRC/$src_path:$image_ref"
@@ -52,7 +52,7 @@ for app in "${APPS[@]}"; do
 done
 
 wait
-echo "Sleep for $SYNC_RETRY_INTERVAL"
+#echo "Sleep for $SYNC_RETRY_INTERVAL"
 sleep "${SYNC_RETRY_INTERVAL}"
 
 done
